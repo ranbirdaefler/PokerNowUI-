@@ -1,0 +1,24 @@
+{
+  "name": "PokerNow Odds Overlay",
+  "version": "1.0",
+  "manifest_version": 3,
+  "description": "Displays real-time poker odds from a local Python service on PokerNow.",
+
+  "permissions": [
+    "scripting",
+    "activeTab"
+  ],
+  
+  "host_permissions": [
+    "https://www.pokernow.club/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.pokernow.club/*"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+
