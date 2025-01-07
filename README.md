@@ -1,6 +1,11 @@
 # PokerNowUI-
 PokerNow UI developed for software engineering project.
 
+What this UI does:
+
+This UI contains two parts, the first is a simple odds calculation for poker hands. We have that for a certain hand(cards you have) and community hards we calculate the odds you hit a certain poker hand(For example one pair, two pair, straight etc..) and display it. Additionally we do a simple simulation where we take your hand and community cards plus number of opponents then simulate how often you win against them using PyPokerEngines estimate_hole_card_win_rate function. The second part of the UI is using LLM's to give advice on what action to take based on your position, the money in the pot, your hand and community cards and players bets. We query the LLM with this information and ask the LLM to return what they think is the best action(Right now we ask to return frequencies at which you should be making actions, eg: Call 40%, Fold 30%, Raise 20%) based on this information. Note that these recommended actions could be inaccurate depending on the LLM you choose to use(We use GPT-4 in our examples but you can easily change the code to use other LLMs). Indeed I believe that where this method will truly shine is if somebody fine-tuned an LLM for poker play then used this in the UI. 
+
+
 
 Instructions for usage: <br />
 
@@ -21,3 +26,5 @@ Instructions for usage: <br />
         Click "Load Unpacked" and select the extension folder then load it <br />
 5) Use the extension: <br />
      Type python server.py into your terminal then load any game in pokernow and it should be working!
+
+        
