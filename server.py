@@ -3,9 +3,12 @@ from flask_cors import CORS
 import random
 from pypokerengine.utils.card_utils import estimate_hole_card_win_rate
 from pypokerengine.engine.card import Card
+import openai
 
 app = Flask(__name__)
 CORS(app)
+
+openai.api_key = "enter_openai_key"
 
 # Normalize the card input for pypokerengine
 SUITS = {'h': 'H', 'd': 'D', 'c': 'C', 's': 'S'}
@@ -44,14 +47,6 @@ def best_5card_classification(cards_7):
     """
     from collections import Counter
 
-    # Convert the 7 "D4"/"H7" strings to Card objects?
-    # Actually in the rest of the code, we create Card objects from them.
-    # But for classification, let's do a quick rank/suit counting approach.
-    # We'll do it directly on the 'D4' etc. Or better, let's build Card objects:
-
-    # Actually, each item is something like "D4" => suit='D', rank='4'.
-    # We can parse them if needed, but let's assume we already have Card objects
-    # if the rest of the code calls Card(suit, rank). We'll do a simpler approach:
     import re
 
     # We assume each c is a pypokerengine Card object
@@ -230,13 +225,30 @@ def odds_endpoint():
         return jsonify({'winProbability': win_rate*100})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/update_player_stats', methods=['POST'])
-def update_player_stats():
+@app.route('/query_llm', methods=['POST'])
+def query_llm():
     data = request.get_json()
-    app.logger.debug(f"Received player stats: {data}")
-    return jsonify({"status":"Player stats received","data":data}),200
+    message = data.get('message', '')
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant trained to provide poker advice."},
+                {"role": "user", "content": message}
+            ],
+            max_tokens=150,
+            temperature=0.7
+        )
+
+        generated_text = response['choices'][0]['message']['content'].strip()
+        app.logger.info(f"Raw LLM Response: {generated_text}")
+
+        return jsonify({'response': generated_text})
+
+    except Exception as e:
+        app.logger.error(f"Error querying OpenAI: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

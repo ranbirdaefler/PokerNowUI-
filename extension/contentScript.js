@@ -1,10 +1,11 @@
 /****************************************************
- * 1) Inject the floating widget for displaying odds
+ * 1) Inject the floating widgets for displaying odds and game state values
  ****************************************************/
 injectOddsWidget();
+injectGameStateWidget();
 
 /****************************************************
- * 2) Set Up MutationObserver to Detect Cards
+ * 2) Set Up MutationObserver to Detect Cards and Changes in DOM
  ****************************************************/
 function watchForSecondCard() {
   const targetNode = document.querySelector('.card-container.card-p2');
@@ -29,48 +30,28 @@ function watchForSecondCard() {
 }
 watchForSecondCard();
 
-/****************************************************
- * 3) Periodically Read the DOM and Fetch Odds
- ****************************************************/
 const REFRESH_INTERVAL_MS = 3000;
 let lastCommunityCardCount = 0;
-
-// Initialize blinds
 let currentSmallBlind = null;
 let currentBigBlind = null;
-
-// Function to update blinds
-function updateBlinds() {
-  const blinds = getBlinds();
-  if (blinds.bigBlind && blinds.littleBlind) {
-    currentBigBlind = blinds.bigBlind;
-    currentSmallBlind = blinds.littleBlind;
-    console.log(`[PokerNow Extension] Updated blinds: Small Blind = ${currentSmallBlind}, Big Blind = ${currentBigBlind}`);
-  } else {
-    console.warn('[PokerNow Extension] Could not determine blinds.');
-  }
-}
-
-// Initial blinds setup
-updateBlinds();
+let isLLMCalled = false; // Global flag to track if LLM has been called
 
 setInterval(() => {
   try {
-    checkForNewHand();
 
     const playerCards = getPlayerCards();
     const communityCards = getCommunityCards();
     updateWidgetCards(playerCards, communityCards);
 
-    // A) Overall "winProbability"
+    const gameState = getGameState();
+  
+    checkYourTurn(gameState); // Check if it's your turn to act
+
     if (playerCards.length === 2) {
       fetchOdds(playerCards, communityCards, 1)
         .then((winProb) => updateOddsDisplay(winProb))
         .catch(() => updateOddsDisplay(-1));
-    }
 
-    // B) Probability of hitting one pair, two pair, etc.
-    if (playerCards.length === 2) {
       fetchHandOdds(playerCards, communityCards, 1000)
         .then((handOdds) => updateHandOddsDisplay(handOdds))
         .catch((err) => {
@@ -78,37 +59,54 @@ setInterval(() => {
         });
     }
 
-    // C) Bet tracking, cleanup seats, update UI
-    trackBettingActions();
-    cleanupMissingPlayers();
-    updateStatsDisplay();
-    sendPlayerStatsToServer();
-
     lastCommunityCardCount = communityCards.length;
-
-    // Optionally, update blinds periodically or when a new hand is detected
-    // This can be placed inside checkForNewHand() if blinds change only per hand
   } catch (error) {
     console.error('[PokerNow Extension] Unexpected error:', error);
   }
 }, REFRESH_INTERVAL_MS);
 
 /************************************************
- * 4) Widget Injection & UI Update Functions
+ * 3) Widget Injection & UI Update Functions
  ************************************************/
 function injectOddsWidget() {
+  function makeWidgetDraggable(widget) {
+    widget.style.position = 'absolute';
+    widget.style.cursor = 'move';
+  
+    let offsetX = 0;
+    let offsetY = 0;
+  
+    widget.addEventListener('mousedown', (e) => {
+      offsetX = e.clientX - widget.getBoundingClientRect().left;
+      offsetY = e.clientY - widget.getBoundingClientRect().top;
+      document.addEventListener('mousemove', moveWidget);
+      document.addEventListener('mouseup', stopMovingWidget);
+    });
+  
+    function moveWidget(e) {
+      widget.style.left = `${e.clientX - offsetX}px`;
+      widget.style.top = `${e.clientY - offsetY}px`;
+    }
+  
+    function stopMovingWidget() {
+      document.removeEventListener('mousemove', moveWidget);
+      document.removeEventListener('mouseup', stopMovingWidget);
+    }
+  }
   const widget = document.createElement('div');
   widget.id = 'poker-odds-widget';
   widget.style.position = 'fixed';
-  widget.style.top = '100px';
+  widget.style.top = '250px';
   widget.style.right = '20px';
   widget.style.zIndex = '9999';
   widget.style.backgroundColor = 'white';
   widget.style.border = '1px solid #ccc';
-  widget.style.padding = '10px';
+  widget.style.padding = '5px';
   widget.style.fontFamily = 'Arial, sans-serif';
-  widget.style.width = '270px';
-  widget.style.fontSize = '14px';
+  widget.style.width = '200px';
+  widget.style.fontSize = '12px';
+  widget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.1)';
+  widget.style.borderRadius = '8px';
 
   widget.innerHTML = `
     <h4 style="margin:0 0 10px;">Poker Stats</h4>
@@ -128,12 +126,56 @@ function injectOddsWidget() {
       <strong>Community Cards:</strong> <span id="community-cards">None</span><br>
       <strong id="odds-value">Win Probability: Loading...</strong>
     </div>
-    <hr>
-    <div id="stats-display">
-      <h5 style="margin:0 0 5px;">Player Stats</h5>
-      <div id="player-stats-list"></div>
-    </div>
   `;
+  makeWidgetDraggable(widget);
+  document.body.appendChild(widget);
+}
+
+function injectGameStateWidget() {
+  function makeWidgetDraggable(widget) {
+    widget.style.position = 'absolute';
+    widget.style.cursor = 'move';
+  
+    let offsetX = 0;
+    let offsetY = 0;
+  
+    widget.addEventListener('mousedown', (e) => {
+      offsetX = e.clientX - widget.getBoundingClientRect().left;
+      offsetY = e.clientY - widget.getBoundingClientRect().top;
+      document.addEventListener('mousemove', moveWidget);
+      document.addEventListener('mouseup', stopMovingWidget);
+    });
+  
+    function moveWidget(e) {
+      widget.style.left = `${e.clientX - offsetX}px`;
+      widget.style.top = `${e.clientY - offsetY}px`;
+    }
+  
+    function stopMovingWidget() {
+      document.removeEventListener('mousemove', moveWidget);
+      document.removeEventListener('mouseup', stopMovingWidget);
+    }
+  }
+  const widget = document.createElement('div');
+  widget.id = 'poker-game-state-widget';
+  widget.style.position = 'fixed';
+  widget.style.top = '250px';
+  widget.style.left = '20px';
+  widget.style.zIndex = '9999';
+  widget.style.backgroundColor = 'white';
+  widget.style.border = '1px solid #ccc';
+  widget.style.padding = '5px';
+  widget.style.fontFamily = 'Arial, sans-serif';
+  widget.style.width = '200px';
+  widget.style.fontSize = '12px';
+  widget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.1)';
+  widget.style.borderRadius = '8px';
+
+  widget.innerHTML = `
+    <h4 style="margin:0 0 10px;">Poker Game State</h4>
+    <div id="llm-suggestion" style="margin-top: 10px; color: blue;"><strong>LLM Suggestion:</strong> Waiting...</div>
+  `;
+  makeWidgetDraggable(widget)
   document.body.appendChild(widget);
 }
 
@@ -172,67 +214,138 @@ function updateHandOddsDisplay(handOdds) {
   `;
 }
 
-function updateStatsDisplay() {
-  const playerStatsList = document.getElementById('player-stats-list');
-  if (!playerStatsList) return;
-  playerStatsList.innerHTML = '';
 
-  Object.keys(playerStats).forEach((playerName) => {
-    const stats = playerStats[playerName];
-    const div = document.createElement('div');
-    div.style.marginBottom = '4px';
-    div.textContent = `${playerName}: RFI=${stats.rfiCount}, 3-bet=${stats.threeBetCount}, limp=${stats.limpCount}`;
-    playerStatsList.appendChild(div);
-  });
-}
-
-/***************************************************
- * 5) Functions for Reading Cards from the DOM
- ***************************************************/
-/**
- * We must produce strings like "4dd","7hh","10dd","2ss".
- * rank + (suit letter repeated 2x).
- */
-function mapToDoubleSuitFormat(rankStr, suitStr) {
-  // Example:
-  // rankStr = "4", suitStr = "♦" => "4dd"
-  // rankStr = "7", suitStr = "♥" => "7hh"
-  // rankStr = "10", suitStr = "♦" => "10dd"
-
-  // We'll define a mapping for suits:
-  const suitMap = {
-    '♠': 'ss','s': 'ss','spade': 'ss','spades': 'ss',
-    '♣': 'cc','c': 'cc','club': 'cc','clubs': 'cc',
-    '♦': 'dd','d': 'dd','diamond': 'dd','diamonds': 'dd',
-    '♥': 'hh','h': 'hh','heart': 'hh','hearts': 'hh'
+/************************************************
+ * 4) Parsing Game State from the DOM
+ ************************************************/
+function getGameState() {
+  const blinds = getBlinds(); // Parse blinds
+  const gameState = {
+    playerCards: getPlayerCards(), // Retrieve player hole cards
+    communityCards: getCommunityCards(), // Retrieve community cards
+    playerPositions: getPlayerPositions(),
+    playerBets: getPlayerBets(),
+    playerStacks: getPlayerStacks(),
+    potSize: getPotSize(),
+    smallBlind: blinds.smallBlind,
+    bigBlind: blinds.bigBlind,
   };
-
-  // We'll keep the rank as is (or uppercase). '10' => '10', 'A' => 'A'.
-  // Then we do rank + suitMap(suitStr).
-  const rank = rankStr.toUpperCase(); 
-  const s = suitMap[suitStr.toLowerCase()] || suitStr; // fallback
-
-  // final => e.g. "4dd", "7hh", "10dd"
-  return `${rank}${s || ''}`;
+  return gameState;
 }
 
-/**
- * Reads hole cards from DOM, produce "4dd","10dd","7hh" etc.
- */
+
+function getPlayerPositions() {
+  const seatsContainer = document.querySelector('.seats');
+  if (!seatsContainer) {
+    console.warn('[PokerNow Extension] Seats container not found.');
+    return {};
+  }
+
+  const dealerButtonElement = seatsContainer.querySelector('.dealer-button-ctn');
+  if (!dealerButtonElement) {
+    console.warn('[PokerNow Extension] Dealer button not found.');
+    return {};
+  }
+
+  const dealerClasses = Array.from(dealerButtonElement.classList);
+  const dealerPositionClass = dealerClasses.find(cls => cls.startsWith('dealer-position-'));
+  if (!dealerPositionClass) {
+    console.warn('[PokerNow Extension] Dealer position class not found.');
+    return {};
+  }
+
+  const dealerSeatNumber = parseInt(dealerPositionClass.split('-').pop(), 10);
+  if (isNaN(dealerSeatNumber)) {
+    console.warn('[PokerNow Extension] Dealer seat number could not be parsed.');
+    return {};
+  }
+
+  const youElement = document.querySelector('.table-player.you-player .table-player-name a');
+  const yourName = youElement ? youElement.textContent.trim() : 'Hero';
+
+  const playerPositions = {};
+  let currentSeat = dealerSeatNumber; // Start at dealer's seat
+  const seatOrder = ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'UTG+2', 'MP', 'MP+1', 'CO'];
+  let positionIndex = 0;
+
+  do {
+    const playerEl = document.querySelector(`.table-player.table-player-${currentSeat}`);
+    if (playerEl) {
+      const nameEl = playerEl.querySelector('.table-player-name a');
+      if (nameEl) {
+        const playerName = nameEl.textContent.trim();
+        const position = seatOrder[positionIndex % seatOrder.length] || 'Unknown';
+
+        if (playerName === yourName) {
+          playerPositions[`${playerName} (hero)`] = position;
+        } else {
+          playerPositions[`${playerName} (villain)`] = position;
+        }
+
+        positionIndex++;
+      }
+    }
+    currentSeat = currentSeat === 10 ? 1 : currentSeat + 1; // Increment seat, loop back after seat 10
+  } while (currentSeat !== dealerSeatNumber);
+
+  return playerPositions;
+}
+
+
+function getPlayerBets() {
+  const playerBets = {};
+  document.querySelectorAll('.table-player').forEach(playerEl => {
+    const nameEl = playerEl.querySelector('.table-player-name a');
+    const betValueElement = playerEl.querySelector('.table-player-bet-value .chips-value .normal-value');
+    const checkElement = playerEl.querySelector('.table-player-bet-value.check');
+
+    if (nameEl) {
+      const playerName = nameEl.textContent.trim();
+      let betValue;
+
+      if (checkElement) {
+        betValue = 'Check';
+      } else if (betValueElement) {
+        betValue = parseInt(betValueElement.textContent.trim(), 10) || 0;
+      }
+
+      if (betValue !== undefined) {
+        playerBets[playerName] = betValue;
+      }
+    }
+  });
+  return playerBets;
+}
+
+function getPlayerStacks() {
+  const playerStacks = {};
+  document.querySelectorAll('.table-player').forEach(playerEl => {
+    const nameEl = playerEl.querySelector('.table-player-name a');
+    const stackValueElement = playerEl.querySelector('.table-player-stack .chips-value .normal-value');
+    if (nameEl && stackValueElement) {
+      const playerName = nameEl.textContent.trim();
+      const stackValue = parseInt(stackValueElement.textContent.trim(), 10) || 0;
+      playerStacks[playerName] = stackValue;
+    }
+  });
+  return playerStacks;
+}
+
+function getPotSize() {
+  const potSizeElement = document.querySelector('.table-pot-size .main-value .normal-value');
+  return potSizeElement ? parseInt(potSizeElement.textContent.trim(), 10) || 0 : 0;
+}
+
 function getPlayerCards() {
   const player1Cards = Array.from(document.querySelectorAll('.card-container.card-p1, .card-container.card-p2'));
   return player1Cards.map((card) => {
     const rank = card.querySelector('.value')?.textContent?.trim() || '';
-    // suits can appear as multiple spans, we join them:
     const suit = Array.from(card.querySelectorAll('.suit')).map(s => s.textContent.trim()).join('').toLowerCase();
     if (!rank || !suit) return null;
     return mapToDoubleSuitFormat(rank, suit);
   }).filter(Boolean);
 }
 
-/**
- * Reads community cards from DOM, produce "4dd","10dd","7hh" etc.
- */
 function getCommunityCards() {
   const communityCards = Array.from(document.querySelectorAll('.card-container:not(.card-p1):not(.card-p2)'));
   return communityCards.map((card) => {
@@ -244,8 +357,55 @@ function getCommunityCards() {
 }
 
 /************************************************
- * 6) Fetching Odds from Your Python Server
+ * 5) Detect if it's Your Turn to Act
  ************************************************/
+
+async function checkYourTurn(gameState) {
+  const yourTurnElement = document.querySelector('.table-player.you-player.decision-current');
+  const llmSuggestionWidget = document.getElementById('llm-suggestion');
+
+  if (yourTurnElement) {
+
+
+    // Call the LLM only if it hasn't been called yet
+    if (!isLLMCalled) {
+      isLLMCalled = true; // Set the flag to prevent further calls
+      try {
+        const suggestion = await queryLLM(gameState);
+        llmSuggestionWidget.textContent = `LLM Suggestion: ${suggestion}`;
+      } catch (error) {
+        llmSuggestionWidget.textContent = 'LLM Suggestion: Error fetching suggestion';
+        console.error('[PokerNow Extension] Error querying LLM:', error);
+      }
+    }
+  } else {
+
+    // Reset the flag when it's no longer your turn
+    isLLMCalled = false;
+  }
+}
+function getBlinds() {
+  const blindContainer = document.querySelector('.blind-value-ctn'); // Find the container with blind values
+  if (!blindContainer) {
+    console.warn('[PokerNow Extension] Blind container not found.');
+    return { smallBlind: null, bigBlind: null };
+  }
+
+  const blindValues = blindContainer.querySelectorAll('.chips-value .normal-value');
+  if (!blindValues || blindValues.length < 2) {
+    console.warn('[PokerNow Extension] Could not parse blind values.');
+    return { smallBlind: null, bigBlind: null };
+  }
+
+  const smallBlind = parseInt(blindValues[0].textContent.trim(), 10) || null;
+  const bigBlind = parseInt(blindValues[1].textContent.trim(), 10) || null;
+  console.log(`[PokerNow Extension] Small Blind: ${smallBlind}, Big Blind: ${bigBlind}`);
+  return { smallBlind, bigBlind };
+}
+
+/************************************************
+ * 6) Fetching Odds from Your Python Server
+************************************************/
 async function fetchOdds(playerCards, communityCards, numOpponents) {
   const url = 'http://127.0.0.1:5000/calculate_odds';
   try {
@@ -281,163 +441,63 @@ async function fetchHandOdds(playerCards, communityCards, numSimulations = 1000)
 }
 
 /************************************************
- * 7) Tracking & Aggregating Betting Stats
+ * 6) Query LLM for Suggestions
  ************************************************/
-let playerStats = {};
-let lastBetAmounts = {};
-let rfiPlayer = null;
-let rfiBet = 0;
-let forcedBlindsPlayers = [];
+async function queryLLM(gameState) {
+  const url = 'http://127.0.0.1:5000/query_llm';
+  const playerCards = gameState.playerCards || [];
+  const communityCards = gameState.communityCards || [];
 
-function checkForNewHand() {
-  const communityCards = getCommunityCards();
-  if (communityCards.length === 0 && lastCommunityCardCount > 0) {
-    console.log('[PokerNow Extension] Detected a new hand. Resetting preflop logic.');
-    lastBetAmounts = {};
-    rfiPlayer = null;
-    rfiBet = 0;
-    forcedBlindsPlayers = [];
+  const message = `
+  You are playing Texas Hold'em poker. Here is the current game state:
+  - Small Blind: ${gameState.smallBlind || 'Unknown'} chips.
+  - Big Blind: ${gameState.bigBlind || 'Unknown'} chips.
+  - Pot size: ${gameState.potSize} chips.
+  - Your hand: ${playerCards.length ? playerCards.join(', ') : 'None'}.
+  - Community cards: ${communityCards.length ? communityCards.join(', ') : 'None'}.
+  - Players at the table and their positions:
+  ${Object.entries(gameState.playerPositions)
+    .map(([player, position]) => `${player} is ${position} with a stack of ${gameState.playerStacks[player.split(' ')[0]]} chips and bet ${gameState.playerBets[player.split(' ')[0]] || 'No action yet'}`)
+    .join('\n')}.
 
-    // Update blinds for the new hand
-    updateBlinds();
-  }
-}
+  Based on this information, provide the optimal action for me to take. Return only the following:
+  1. Probabilities for folding, calling, and raising (in percentages).
+  2. A brief explanation (maximum two sentences) for why this is the best course of action.
 
-function trackBettingActions() {
-  const playerElements = document.querySelectorAll('.table-player');
-  const community = getCommunityCards();
-  const isPreflop = (community.length === 0);
-
-  playerElements.forEach((playerEl) => {
-    const nameEl = playerEl.querySelector('.table-player-name a');
-    if (!nameEl) return;
-    const playerName = nameEl.textContent.trim();
-
-    if (!playerStats[playerName]) {
-      playerStats[playerName] = { rfiCount: 0, threeBetCount: 0, limpCount: 0 };
-    }
-
-    const betValueElement = playerEl.querySelector('.table-player-bet-value .normal-value');
-    let currentBet = betValueElement ? parseInt(betValueElement.textContent.replace(/\D/g, ''), 10) : 0;
-    if (isNaN(currentBet)) currentBet = 0;
-
-    const lastBet = lastBetAmounts[playerName] || 0;
-    if (currentBet === lastBet) return;
-
-    lastBetAmounts[playerName] = currentBet;
-
-    if (isPreflop) {
-      // Skip forced blinds
-      if (
-        rfiPlayer === null &&
-        forcedBlindsPlayers.length < 2 &&
-        lastBet === 0 &&
-        currentBet > 0 &&
-        !forcedBlindsPlayers.includes(playerName)
-      ) {
-        forcedBlindsPlayers.push(playerName);
-        lastBetAmounts[playerName] = currentBet;
-        console.log(`[PokerNow Extension] Skipping forced blind for ${playerName} (bet ${currentBet}).`);
-        return;
-      }
-
-      if (rfiPlayer === null && currentBet === currentBigBlind) {
-        playerStats[playerName].limpCount += 1;
-        console.log(`[PokerNow Extension] ${playerName} -> Limp (bet ${currentBet})`);
-      }
-      else if (rfiPlayer === null && currentBet >= currentBigBlind) {
-        rfiPlayer = playerName;
-        rfiBet = currentBet;
-        playerStats[playerName].rfiCount += 1;
-        console.log(`[PokerNow Extension] ${playerName} -> RFI (bet ${currentBet})`);
-      }
-      else if (rfiPlayer && currentBet > rfiBet) {
-        playerStats[playerName].threeBetCount += 1;
-        console.log(`[PokerNow Extension] ${playerName} -> 3-bet (bet ${currentBet})`);
-      }
-    }
-  });
-}
-
-function cleanupMissingPlayers() {
-  const seatedNames = [];
-  document.querySelectorAll('.table-player').forEach((el) => {
-    const nameA = el.querySelector('.table-player-name a');
-    if (nameA) {
-      seatedNames.push(nameA.textContent.trim());
-    }
-  });
-
-  Object.keys(playerStats).forEach((storedName) => {
-    if (!seatedNames.includes(storedName)) {
-      console.log(`[PokerNow Extension] Removing stats for ${storedName} (left seat).`);
-      delete playerStats[storedName];
-      delete lastBetAmounts[storedName];
-      forcedBlindsPlayers = forcedBlindsPlayers.filter((n) => n !== storedName);
-      if (rfiPlayer === storedName) {
-        rfiPlayer = null;
-        rfiBet = 0;
-      }
-    }
-  });
-}
-
-/************************************************
- * 8) Send Stats to the Server
- ************************************************/
-let lastSentStats = JSON.stringify({});
-
-async function sendPlayerStatsToServer() {
-  const url = 'http://127.0.0.1:5000/update_player_stats';
-  const payload = { playerStats };
-  const payloadJson = JSON.stringify(payload);
-
-  if (payloadJson === lastSentStats) return;
-  lastSentStats = payloadJson;
+  Example output:
+  Fold: 30%, Call: 40%, Raise: 30%
+  Explanation: Based on your hand and pot odds, calling is recommended due to the high chance of improving on the flop.
+`;
 
   try {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: payloadJson,
+      body: JSON.stringify({ message }),
     });
-    if (!resp.ok) {
-      throw new Error(`Server error (update_player_stats): ${resp.status}`);
-    }
+    if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
     const data = await resp.json();
-    console.log('[PokerNow Extension] /update_player_stats response:', data);
+    return data.response;
   } catch (err) {
-    console.error('[PokerNow Extension] Error sending player stats:', err);
+    console.error('[PokerNow Extension] Error querying LLM:', err);
+    throw err;
   }
 }
 
 
-/****************************************************
- * 9) Function to Dynamically Retrieve Blinds
- ****************************************************/
-function getBlinds() {
-  try {
-    // Adjust the selector based on your actual DOM structure
-    const blindElements = document.querySelectorAll('.blind-value .chips-value .normal-value');
-    if (blindElements.length < 2) {
-      console.warn('[PokerNow Extension] Could not find both blinds.');
-      return { bigBlind: null, littleBlind: null };
-    }
+/************************************************
+ * 7) Helper Function to Format Cards
+ ************************************************/
+function mapToDoubleSuitFormat(rankStr, suitStr) {
+  const suitMap = {
+    '♠': 'ss','s': 'ss','spade': 'ss','spades': 'ss',
+    '♣': 'cc','c': 'cc','club': 'cc','clubs': 'cc',
+    '♦': 'dd','d': 'dd','diamond': 'dd','diamonds': 'dd',
+    '♥': 'hh','h': 'hh','heart': 'hh','hearts': 'hh'
+  };
 
-    const blinds = Array.from(blindElements).map(el => parseInt(el.textContent.trim(), 10)).filter(num => !isNaN(num));
-    if (blinds.length < 2) {
-      console.warn('[PokerNow Extension] Could not parse both blinds.');
-      return { bigBlind: null, littleBlind: null };
-    }
+  const rank = rankStr.toUpperCase(); 
+  const s = suitMap[suitStr.toLowerCase()] || suitStr; // fallback
 
-    // Determine which is big and which is small
-    const sortedBlinds = blinds.sort((a, b) => a - b);
-    return {
-      littleBlind: sortedBlinds[0],
-      bigBlind: sortedBlinds[1]
-    };
-  } catch (error) {
-    console.error('[PokerNow Extension] Error retrieving blinds:', error);
-    return { bigBlind: null, littleBlind: null };
-  }
+  return `${rank}${s || ''}`;
 }
