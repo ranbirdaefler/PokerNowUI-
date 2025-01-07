@@ -48,7 +48,7 @@ setInterval(() => {
     checkYourTurn(gameState); // Check if it's your turn to act
 
     if (playerCards.length === 2) {
-      fetchOdds(playerCards, communityCards, 1)
+      fetchOdds(playerCards, communityCards, getNumOpponents())
         .then((winProb) => updateOddsDisplay(winProb))
         .catch(() => updateOddsDisplay(-1));
 
@@ -354,6 +354,29 @@ function getCommunityCards() {
     if (!rank || !suit) return null;
     return mapToDoubleSuitFormat(rank, suit);
   }).filter(Boolean);
+}
+function getNumOpponents(){
+  const playerElements = document.querySelectorAll('.table-player'); // Select all players
+  const youElement = document.querySelector('.table-player.you-player'); // Identify yourself
+
+  if (!playerElements || playerElements.length === 0 || !youElement) {
+    console.warn('[PokerNow Extension] Could not determine the number of players.');
+    return 0;
+  }
+
+  // Filter players who haven't folded
+  const activePlayers = Array.from(playerElements).filter(playerEl => {
+    const isFolded = playerEl.classList.contains('fold'); // Check if the player has the `fold` class
+    const statusIcon = playerEl.querySelector('.table-player-status-icon'); // Look for the status icon
+    const hasFoldedStatus = statusIcon && statusIcon.textContent.trim().toLowerCase() === 'fold';
+
+    return !isFolded && !hasFoldedStatus; // Exclude folded players
+  });
+
+  // Exclude yourself from the active players
+  const numActiveOpponents = activePlayers.filter(playerEl => !playerEl.classList.contains('you-player')).length;
+  console.log(`[PokerNow Extension] Number of active opponents: ${numActiveOpponents}`);
+  return numActiveOpponents;
 }
 
 /************************************************
