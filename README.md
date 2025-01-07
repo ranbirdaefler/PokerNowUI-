@@ -7,14 +7,14 @@ Instructions for usage:
 1) Clone the repository on your machine, then cd to the directory with the files in it
 
 2) Set up a virtual environment as follows:
-        python3 -m venv venv
+        Type python3 -m venv venv then follow it by typing
         source venv/bin/activate  # On macOS
 3) Install dependencies:
        Type into your terminal:
-       pip install openai
-       pip install Flask
-       pip install Flask-CORS
-       pip install PyPokerEngine
+       pip install openai,
+       pip install Flask,
+       pip install Flask-CORS,
+       pip install PyPokerEngine,
 4) Add the extension to google chrome:
        Open Google Chrome and navigate to chrome://extensions/.
         Enable Developer Mode (toggle switch in the top-right corner).
